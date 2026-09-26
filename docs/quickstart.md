@@ -3,14 +3,17 @@
 ## 1. Install
 
 ```bash
-dotnet add package TypeSafeAI.Sdk
+dotnet add package TypeSafeAI.Sdk --prerelease
 ```
 
 The dependency injection integration is a separate, optional package:
 
 ```bash
-dotnet add package TypeSafeAI.Sdk.DependencyInjection
+dotnet add package TypeSafeAI.Sdk.DependencyInjection --prerelease
 ```
+
+Only prerelease versions are currently published, so `--prerelease` is required. Once a stable
+version is available, omit the flag to install the latest stable release.
 
 The package IDs and C# namespaces use the `TypeSafeAI` brand. The primary namespaces are
 `TypeSafeAI` and `TypeSafeAI.DependencyInjection`.

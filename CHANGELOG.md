@@ -12,6 +12,11 @@ version is `0.x`, a breaking change increments the minor version, and the public
 tracked per project in `PublicAPI.Shipped.txt` and `PublicAPI.Unshipped.txt` so that no change to
 it can happen by accident.
 
+### Fixed
+
+- Installation commands now include `--prerelease` for both NuGet packages so they work while
+  only prerelease versions are published.
+
 ### Changed
 
 - The NuGet package IDs are now `TypeSafeAI.Sdk` and
