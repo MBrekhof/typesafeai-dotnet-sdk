@@ -218,6 +218,58 @@ public sealed class ResponseParsingTests
         Assert.Equal(12, result.Usage.TotalTokens);
     }
 
+    [Theory]
+    [InlineData("2147483648", "2", null, 2)]
+    [InlineData("-2147483649", "2", null, 2)]
+    [InlineData("1.5", "2", null, 2)]
+    [InlineData("1e10", "2", null, 2)]
+    [InlineData("2", "2147483648", 2, null)]
+    [InlineData("2", "1.5", 2, null)]
+    [InlineData("2147483648", "1.5", null, null)]
+    public async Task ATokenCountThatDoesNotFitAnIntDoesNotFailTheResponse(
+        string inputTokens, string outputTokens, int? expectedInput, int? expectedOutput)
+    {
+        var result = await ReadUsageAsync(inputTokens, outputTokens);
+
+        // Usage is optional metadata; a count the model cannot hold used to throw FormatException
+        // and discard the answers along with it.
+        Assert.Equal(0.4, result.Noul("a").Probability);
+        Assert.Equal(expectedInput, result.Usage!.InputTokens);
+        Assert.Equal(expectedOutput, result.Usage.OutputTokens);
+        Assert.Equal(inputTokens, result.RawJson.GetProperty("usage").GetProperty("input_tokens").GetRawText());
+        Assert.Equal(outputTokens, result.RawJson.GetProperty("usage").GetProperty("output_tokens").GetRawText());
+    }
+
+    [Theory]
+    [InlineData("2147483647", "0", int.MaxValue, 0, int.MaxValue)]
+    [InlineData("-2147483648", "0", int.MinValue, 0, int.MinValue)]
+    [InlineData("2147483647", "1", int.MaxValue, 1, null)]
+    public async Task ATokenCountAtTheIntLimitIsKeptAndAnOverflowingTotalIsUnknown(
+        string inputTokens, string outputTokens, int expectedInput, int expectedOutput, int? expectedTotal)
+    {
+        var result = await ReadUsageAsync(inputTokens, outputTokens);
+
+        // Representable counts are never rejected; a total that does not fit an int is unknown
+        // rather than wrapping around to a negative number.
+        Assert.Equal(expectedInput, result.Usage!.InputTokens);
+        Assert.Equal(expectedOutput, result.Usage.OutputTokens);
+        Assert.Equal(expectedTotal, result.Usage.TotalTokens);
+    }
+
+    private static Task<SystemOneResult> ReadUsageAsync(string inputTokens, string outputTokens)
+    {
+        var json = $$"""
+            {
+              "model": "jev-latest",
+              "answers": { "a": { "type": "noul", "noul": 0.4 } },
+              "usage": { "input_tokens": {{inputTokens}}, "output_tokens": {{outputTokens}} }
+            }
+            """;
+
+        var (client, _) = TestClient.Returning(json);
+        return client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken);
+    }
+
     [Fact]
     public async Task TheResolvedModelIsReportedNotTheAlias()
     {
