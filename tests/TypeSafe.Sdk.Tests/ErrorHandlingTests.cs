@@ -167,6 +167,50 @@ public sealed class ErrorHandlingTests
         Assert.InRange(exception.RetryAfter!.Value.TotalSeconds, 25, 31);
     }
 
+    [Theory]
+    [InlineData("retry-after-ms", "1e100")]
+    [InlineData("retry-after-ms", "1e309")]
+    [InlineData("retry-after-ms", "Infinity")]
+    [InlineData("Retry-After", "999999999999999999")]
+    [InlineData("Retry-After", "Infinity")]
+    public async Task ARetryAfterTooLargeForATimeSpanSaturates(string header, string value)
+    {
+        var (client, _) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation(header, value);
+                return response;
+            },
+            NoRetry());
+
+        // An out-of-range value used to escape as OverflowException instead of the rate-limit error.
+        var exception = await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        Assert.Equal(TimeSpan.MaxValue, exception.RetryAfter);
+    }
+
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("-Infinity")]
+    public async Task ANonFiniteRetryAfterIsIgnored(string value)
+    {
+        var (client, _) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation("retry-after-ms", value);
+                return response;
+            },
+            NoRetry());
+
+        var exception = await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        Assert.Null(exception.RetryAfter);
+    }
+
     [Fact]
     public async Task EverySdkExceptionDerivesFromTheCommonBase()
     {

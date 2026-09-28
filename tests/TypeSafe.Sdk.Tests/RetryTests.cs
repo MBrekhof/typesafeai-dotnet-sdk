@@ -298,6 +298,39 @@ public sealed class RetryTests
     }
 
     [Fact]
+    public async Task AServerDelayTooLargeForATimeSpanFallsBackToBackoff()
+    {
+        var delays = new List<TimeSpan>();
+        var options = new TypeSafeClientOptions
+        {
+            Retry = new RetryPolicy
+            {
+                MaxRetries = 1,
+                BackoffInitial = TimeSpan.FromMilliseconds(1),
+                BackoffMax = TimeSpan.FromMilliseconds(2),
+                BackoffJitter = 0,
+                OnRetry = attempt => delays.Add(attempt.Delay),
+            },
+        };
+
+        var (client, handler) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation("retry-after-ms", "1e100");
+                return response;
+            },
+            options);
+
+        await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        // The saturated server delay exceeds MaxRetryAfter, so the computed backoff is used.
+        Assert.Equal(2, handler.Attempts);
+        Assert.Equal(1, delays[0].TotalMilliseconds);
+    }
+
+    [Fact]
     public async Task TheTotalBudgetStopsFurtherRetries()
     {
         var options = new TypeSafeClientOptions

@@ -16,6 +16,10 @@ it can happen by accident.
 
 - Installation commands now include `--prerelease` for both NuGet packages so they work while
   only prerelease versions are published.
+- A `retry-after-ms` or `Retry-After` value too large for a `TimeSpan`, such as `1e100` or
+  `Infinity`, no longer escapes as an `OverflowException`. It saturates to `TimeSpan.MaxValue`,
+  so the `TypeSafeRateLimitException` is still thrown and `MaxRetryAfter` falls back to the
+  computed backoff.
 
 ### Changed
 
