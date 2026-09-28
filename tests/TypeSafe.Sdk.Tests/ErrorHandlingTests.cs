@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 
 namespace TypeSafeAI.Tests;
@@ -165,6 +166,80 @@ public sealed class ErrorHandlingTests
 
         Assert.NotNull(exception.RetryAfter);
         Assert.InRange(exception.RetryAfter!.Value.TotalSeconds, 25, 31);
+    }
+
+    [Theory]
+    [InlineData("retry-after-ms", "1e100")]
+    [InlineData("retry-after-ms", "1e309")]
+    [InlineData("retry-after-ms", "Infinity")]
+    [InlineData("Retry-After", "999999999999999999")]
+    [InlineData("Retry-After", "Infinity")]
+    public async Task ARetryAfterTooLargeForATimeSpanSaturates(string header, string value)
+    {
+        var (client, _) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation(header, value);
+                return response;
+            },
+            NoRetry());
+
+        // An out-of-range value used to escape as OverflowException instead of the rate-limit error.
+        var exception = await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        Assert.Equal(TimeSpan.MaxValue, exception.RetryAfter);
+    }
+
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("-Infinity")]
+    public async Task ANonFiniteRetryAfterIsIgnored(string value)
+    {
+        var (client, _) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation("retry-after-ms", value);
+                return response;
+            },
+            NoRetry());
+
+        var exception = await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        Assert.Null(exception.RetryAfter);
+    }
+
+    [Theory]
+    [InlineData("retry-after-ms", 0)]
+    [InlineData("retry-after-ms", 1)]
+    [InlineData("Retry-After", 0)]
+    [InlineData("Retry-After", 1)]
+    public async Task ARetryAfterSaturatesExactlyAtTheTimeSpanLimit(string header, double unitsBelowLimit)
+    {
+        var inMilliseconds = header == "retry-after-ms";
+        var limit = inMilliseconds ? TimeSpan.MaxValue.TotalMilliseconds : TimeSpan.MaxValue.TotalSeconds;
+        var value = limit - unitsBelowLimit;
+        var (client, _) = TestClient.Create(
+            (_, _) =>
+            {
+                var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
+                response.Headers.TryAddWithoutValidation(header, value.ToString("R", CultureInfo.InvariantCulture));
+                return response;
+            },
+            NoRetry());
+
+        var exception = await Assert.ThrowsAsync<TypeSafeRateLimitException>(
+            () => client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken));
+
+        // At the limit the value saturates; one unit below it still converts exactly.
+        var expected = unitsBelowLimit == 0
+            ? TimeSpan.MaxValue
+            : inMilliseconds ? TimeSpan.FromMilliseconds(value) : TimeSpan.FromSeconds(value);
+        Assert.Equal(expected, exception.RetryAfter);
+        Assert.Equal(unitsBelowLimit == 0, exception.RetryAfter == TimeSpan.MaxValue);
     }
 
     [Fact]
