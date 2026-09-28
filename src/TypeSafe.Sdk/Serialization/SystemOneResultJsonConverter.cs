@@ -105,9 +105,13 @@ public sealed class SystemOneResultJsonConverter : JsonConverter<SystemOneResult
             ReadNullableInt(usage, "output_tokens"));
     }
 
+    // A count that does not fit an int, fractional or out of range, reads as unreported rather than
+    // failing the response; the original value stays available in RawJson.
     private static int? ReadNullableInt(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number
-            ? property.GetInt32()
+        element.TryGetProperty(name, out var property) &&
+        property.ValueKind == JsonValueKind.Number &&
+        property.TryGetInt32(out var value)
+            ? value
             : null;
 
     private static void WriteUsage(Utf8JsonWriter writer, Usage usage)

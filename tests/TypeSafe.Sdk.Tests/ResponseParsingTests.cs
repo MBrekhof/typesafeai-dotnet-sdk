@@ -218,6 +218,33 @@ public sealed class ResponseParsingTests
         Assert.Equal(12, result.Usage.TotalTokens);
     }
 
+    [Theory]
+    [InlineData("2147483648")]
+    [InlineData("-2147483649")]
+    [InlineData("1.5")]
+    [InlineData("1e10")]
+    public async Task ATokenCountThatDoesNotFitAnIntDoesNotFailTheResponse(string inputTokens)
+    {
+        var json = $$"""
+            {
+              "model": "jev-latest",
+              "answers": { "a": { "type": "noul", "noul": 0.4 } },
+              "usage": { "input_tokens": {{inputTokens}}, "output_tokens": 2 }
+            }
+            """;
+
+        var (client, _) = TestClient.Returning(json);
+
+        // Usage is optional metadata; a count the model cannot hold used to throw FormatException
+        // and discard the answers along with it.
+        var result = await client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken);
+
+        Assert.Equal(0.4, result.Noul("a").Probability);
+        Assert.Null(result.Usage!.InputTokens);
+        Assert.Equal(2, result.Usage.OutputTokens);
+        Assert.Equal(inputTokens, result.RawJson.GetProperty("usage").GetProperty("input_tokens").GetRawText());
+    }
+
     [Fact]
     public async Task TheResolvedModelIsReportedNotTheAlias()
     {
