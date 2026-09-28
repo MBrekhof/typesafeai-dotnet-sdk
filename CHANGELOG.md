@@ -22,7 +22,8 @@ it can happen by accident.
   backoff when the value exceeds `MaxRetryAfter`.
 - A `usage` token count that does not fit an `int`, such as `2147483648` or `1.5`, no longer fails
   the whole response with a `FormatException`. The count reads as `null` and the original value
-  stays available in `RawJson`.
+  stays available in `RawJson`. `Usage.TotalTokens` likewise reads as `null` when the sum of the
+  two counts does not fit an `int`, instead of wrapping around to a negative number.
 
 ### Changed
 
