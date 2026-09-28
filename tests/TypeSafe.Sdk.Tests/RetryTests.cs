@@ -297,8 +297,10 @@ public sealed class RetryTests
         Assert.Equal(1, delays[0].TotalMilliseconds);
     }
 
-    [Fact]
-    public async Task AServerDelayTooLargeForATimeSpanFallsBackToBackoff()
+    [Theory]
+    [InlineData("retry-after-ms", "1e100")]
+    [InlineData("Retry-After", "1e100")]
+    public async Task AServerDelayTooLargeForATimeSpanFallsBackToBackoff(string header, string value)
     {
         var delays = new List<TimeSpan>();
         var options = new TypeSafeClientOptions
@@ -317,7 +319,7 @@ public sealed class RetryTests
             (_, _) =>
             {
                 var response = StubHttpMessageHandler.Json("""{"detail":"slow down"}""", HttpStatusCode.TooManyRequests);
-                response.Headers.TryAddWithoutValidation("retry-after-ms", "1e100");
+                response.Headers.TryAddWithoutValidation(header, value);
                 return response;
             },
             options);

@@ -18,8 +18,8 @@ it can happen by accident.
   only prerelease versions are published.
 - A `retry-after-ms` or `Retry-After` value too large for a `TimeSpan`, such as `1e100` or
   `Infinity`, no longer escapes as an `OverflowException`. It saturates to `TimeSpan.MaxValue`,
-  so the `TypeSafeRateLimitException` is still thrown and `MaxRetryAfter` falls back to the
-  computed backoff.
+  so the `TypeSafeRateLimitException` is still thrown, and retries fall back to the computed
+  backoff when the value exceeds `MaxRetryAfter`.
 
 ### Changed
 
