@@ -63,6 +63,61 @@ public sealed class ClientBehaviorTests
     }
 
     [Fact]
+    public async Task AnExplicitApiKeyDoesNotLeakIntoTheCallersOptions()
+    {
+        var options = new TypeSafeClientOptions { ApiKey = "tsk_tenant_a" };
+        var handler = new StubHttpMessageHandler(StubHttpMessageHandler.Json(Fixtures.NoulResponse));
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        using var tenantB = new TypeSafeClient("tsk_tenant_b", options, http);
+        using var tenantA = new TypeSafeClient(options, http);
+
+        await tenantA.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken);
+
+        // A shared options object must not be switched to another tenant's key.
+        Assert.Equal("tsk_tenant_a", options.ApiKey);
+        Assert.Equal("Bearer tsk_tenant_a", handler.LastRequest.Headers["Authorization"]);
+    }
+
+    [Fact]
+    public async Task ChangingTheOptionsAfterConstructionDoesNotAffectTheClient()
+    {
+        var options = new TypeSafeClientOptions { ApiKey = TestClient.ApiKey };
+        var (client, handler) = TestClient.Returning(Fixtures.NoulResponse, options: options);
+
+        options.DefaultHeaders = new Dictionary<string, string> { ["X-Added-Later"] = "1" };
+
+        await client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken);
+
+        Assert.False(handler.LastRequest.Headers.ContainsKey("X-Added-Later"));
+    }
+
+    [Fact]
+    public async Task ChangingTheHeadersDictionaryAfterConstructionDoesNotAffectTheClient()
+    {
+        var headers = new Dictionary<string, string> { ["X-Tenant"] = "tenant-a" };
+        var options = new TypeSafeClientOptions { ApiKey = TestClient.ApiKey, DefaultHeaders = headers };
+        var (client, handler) = TestClient.Returning(Fixtures.NoulResponse, options: options);
+
+        headers["X-Tenant"] = "tenant-b";
+
+        await client.SystemOneAsync("text", [new NoulQuestion("a", "q?")], TestContext.Current.CancellationToken);
+
+        Assert.Equal("tenant-a", handler.LastRequest.Headers["X-Tenant"]);
+    }
+
+    [Fact]
+    public void CloningKeepsTheHeadersComparer()
+    {
+        var options = new TypeSafeClientOptions
+        {
+            DefaultHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["X-Tenant"] = "contoso" },
+        };
+
+        Assert.Equal("contoso", options.Clone().DefaultHeaders!["x-tenant"]);
+    }
+
+    [Fact]
     public async Task TheApiKeyFallsBackToTheEnvironmentVariable()
     {
         using var environment = new EnvironmentScope().Set(TypeSafeDefaults.ApiKeyEnvironmentVariable, "tsk_from_env");
